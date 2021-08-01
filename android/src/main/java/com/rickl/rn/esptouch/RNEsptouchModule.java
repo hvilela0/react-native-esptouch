@@ -1,3 +1,8 @@
+/* this fork try to correct the issue: "attempt to invoke virtual method int android
+    content.Context.checkPermission(java.lang.String, int, int) on a null
+    object reference" error and adds a function to get the smartphone's IP
+    on API getNetInfo (see lines 203 and 204) for more info.
+*/
 
 package com.rickl.rn.esptouch;
 
@@ -52,15 +57,24 @@ public class RNEsptouchModule extends ReactContextBaseJavaModule implements Life
     private static final int REQUEST_PERMISSION = 0x01;
     private final ReactApplicationContext reactContext;
     private Activity thisActivity = getCurrentActivity();
-    private Promise mConfigPromise;
-    private String mSSID = "";
-    private String mBSSID = "";
-    private boolean is5GWifi = false;
-    private boolean isWifiConnected = false;
-    private boolean needGPSPermission = false;
-    private boolean mDestroyed = false;
-    private boolean mReceiverRegistered = false; // 记录是否有注册广播接收
+    private Promise  mConfigPromise;
+    private String   mSSID = "";
+    private String   mBSSID = "";
+    private int      mIP = 0;
+    private boolean  is5GWifi = false;
+    private boolean  isWifiConnected = false;
+    private boolean  needGPSPermission = false;
+    private boolean  mDestroyed = false;
+    private boolean  mReceiverRegistered = false; // 记录是否有注册广播接收
     private EsptouchAsyncTask4 mTask; // 配置任务
+
+    private String IntegerIPConvertToStr(int ip){
+    return String.format("%d.%d.%d.%d",
+         (ip & 0xff),   
+         (ip >> 8 & 0xff),             
+         (ip >> 16 & 0xff),    
+         (ip >> 24 & 0xff));
+}
     private BroadcastReceiver mReceiver = new BroadcastReceiver() { // 监听网络状态及GPS开关变化广播
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -129,26 +143,8 @@ public class RNEsptouchModule extends ReactContextBaseJavaModule implements Life
 
     @ReactMethod
     public void initESPTouch() {
-        // issue#29上说Android 9需要授予位置权限后把GPS打开才能获取Wi-Fi信息
-        if (isSDKAtLeastP()) {
-            // 如果未授权位置权限
-            if (ContextCompat.checkSelfPermission(thisActivity, Manifest.permission.ACCESS_COARSE_LOCATION)
-                    != PackageManager.PERMISSION_GRANTED) {
-                // 判断是否需要授权说明
-                if (ActivityCompat.shouldShowRequestPermissionRationale(thisActivity,
-                        Manifest.permission.ACCESS_COARSE_LOCATION)) {
-                    Toast.makeText(thisActivity, "ESPTouch配置需要此权限", Toast.LENGTH_LONG);
-                }
-                // 发起授权请求
-                String[] permissions = {Manifest.permission.ACCESS_COARSE_LOCATION};
-                ActivityCompat.requestPermissions(thisActivity, permissions, REQUEST_PERMISSION);
-            } else {
-                registerBroadcastReceiver();
-            }
-
-        } else {
             registerBroadcastReceiver();
-        }
+        
     }
 
     /* 请求授权后回调(上面的requestPermissions方法调用后，经用户操作反馈后会触发此函数) */
@@ -188,6 +184,7 @@ public class RNEsptouchModule extends ReactContextBaseJavaModule implements Life
         byte[] ssid = ByteUtil.getBytesByString(mSSID);
         byte[] password = ByteUtil.getBytesByString(pwd);
         byte[] bssid = EspNetUtil.parseBssid2bytes(mBSSID);
+        byte[] ip = ByteUtil.getBytesByString(IntegerIPConvertToStr(mIP));
         byte[] deviceCount = ByteUtil.getBytesByString("1");
         byte[] broadcast = {(byte) broadcastType}; // 1 广播， 0 组播
 
@@ -203,6 +200,8 @@ public class RNEsptouchModule extends ReactContextBaseJavaModule implements Life
         WritableMap map = Arguments.createMap();
         map.putString("ssid", mSSID);
         map.putString("bssid", mBSSID);
+        // provides de IP address of the device running the application, not the ESP.
+        map.putString("ip", IntegerIPConvertToStr(mIP));
         promise.resolve(map);
     }
 
@@ -245,6 +244,7 @@ public class RNEsptouchModule extends ReactContextBaseJavaModule implements Life
             Log.i("RNEsptouchModule","No Wifi connection");
             mSSID = "";
             mBSSID = "";
+            mIP = 0;
             isWifiConnected = false;
             if (isSDKAtLeastP()) {
                 checkLocation();
@@ -262,6 +262,7 @@ public class RNEsptouchModule extends ReactContextBaseJavaModule implements Life
                 mSSID = mSSID.substring(1, mSSID.length() - 1);
             }
             mBSSID = info.getBSSID();
+            mIP = info.getIpAddress();
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 int frequency = info.getFrequency();
