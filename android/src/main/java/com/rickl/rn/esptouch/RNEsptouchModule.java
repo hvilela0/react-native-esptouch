@@ -2,6 +2,7 @@
     content.Context.checkPermission(java.lang.String, int, int) on a null
     object reference" error and adds a function to get the smartphone's IP
     on API getNetInfo (see lines 203 and 204) for more info.
+    [need to correct not only this file, but 'Manifest.xml' too!]
 */
 
 package com.rickl.rn.esptouch;
